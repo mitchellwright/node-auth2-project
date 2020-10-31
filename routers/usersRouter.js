@@ -1,12 +1,13 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const db = require("../data/config");
 
 const router = express.Router();
 
 router.post("/api/register", async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, department } = req.body;
 
     const user = await db("users").where({ username }).first();
 
@@ -16,9 +17,13 @@ router.post("/api/register", async (req, res) => {
       });
     }
 
-    const hash = bcrypt.hashSync(credentials.password, 14);
+    const hash = bcrypt.hashSync(password, 14);
 
-    const id = await db("users").insert({ username, password: hash });
+    const id = await db("users").insert({
+      username,
+      password: hash,
+      department,
+    });
 
     res.status(201).json(await db("users").where({ id }).first());
   } catch (err) {
@@ -31,13 +36,32 @@ router.post("/api/login", async (req, res) => {
     const { username, password } = req.body;
     const user = await db("users").where({ username }).first();
 
-    if (user && bcrypt.compareSync(password, user.password)) {
-      res.status(200).json({ message: `Welcome ${user.username}!` });
-    } else {
-      // we will return 401 if the password or username are invalid
-      // we don't want to let attackers know when they have a good username
-      res.status(401).json({ message: "Invalid Credentials" });
+    if (!user) {
+      return res.status(401).json({
+        message: "Invalid Credentials",
+      });
     }
+
+    const passwordValid = await bcrypt.compare(password, user.password);
+
+    if (!passwordValid) {
+      res.status(401).json({
+        message: "Invalid credentials",
+      });
+    }
+
+    const token = jwt.sign(
+      {
+        userID: user.id,
+        userDepartment: user.department,
+      },
+      process.env.JWT_SECRET || "this is a very secret secret"
+    );
+
+    res.json({
+      user,
+      token,
+    });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "yo you messed up" });
